@@ -11,6 +11,7 @@ from typing import Any, Optional
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 
+from . import __version__
 from .tools.index_local import index_local
 from .tools.index_repo import index_repo
 from .tools.list_repos import list_repos
@@ -315,6 +316,12 @@ def main(argv: Optional[list] = None):
     parser = argparse.ArgumentParser(
         prog="jdocmunch-mcp",
         description="Run the jDocMunch MCP stdio server.",
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.parse_args(argv)
     asyncio.run(run_server())

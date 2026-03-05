@@ -5,7 +5,7 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from jdocmunch_mcp.server import list_tools, call_tool
+from jdocmunch_mcp.server import list_tools, call_tool, main
 
 
 class TestListTools:
@@ -65,3 +65,21 @@ class TestCallTool:
         result = await call_tool("index_local", {"path": "/nonexistent/path"})
         data = json.loads(result[0].text)
         assert data["success"] is False
+
+
+class TestCli:
+    def test_version_flag_long(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            main(["--version"])
+
+        assert exc.value.code == 0
+        out = capsys.readouterr().out.strip()
+        assert out == "jdocmunch-mcp 0.1.0"
+
+    def test_version_flag_short(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            main(["-V"])
+
+        assert exc.value.code == 0
+        out = capsys.readouterr().out.strip()
+        assert out == "jdocmunch-mcp 0.1.0"
