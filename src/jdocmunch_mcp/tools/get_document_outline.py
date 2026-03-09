@@ -13,7 +13,7 @@ def get_document_outline(
     storage_path: Optional[str] = None,
 ) -> dict:
     """Return the section structure for a single document, without content."""
-    t0 = time.time()
+    t0 = time.perf_counter()
     store = DocStore(base_path=storage_path)
     owner, name = store._resolve_repo(repo)
     index = store.load_index(owner, name)
@@ -56,7 +56,7 @@ def get_document_outline(
     total = record_savings(tokens_saved, storage_path)
     ca = cost_avoided(tokens_saved, total)
 
-    latency_ms = int((time.time() - t0) * 1000)
+    latency_ms = int((time.perf_counter() - t0) * 1000)
     return {
         "repo": f"{owner}/{name}",
         "doc_path": doc_path,

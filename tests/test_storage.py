@@ -214,3 +214,127 @@ class TestTokenTracker:
         from jdocmunch_mcp.storage.token_tracker import get_total_saved
         total = get_total_saved(base_path=str(tmp_path))
         assert total == n_threads * increment
+
+
+SAMPLE_MD2 = """# Root
+
+Updated intro.
+
+## Section A
+
+Updated content for A.
+
+## Section C
+
+Brand new section.
+"""
+
+
+class TestIncrementalIndexing:
+    def test_detect_no_changes(self, tmp_path):
+        store = make_store(tmp_path)
+        sections, raw_files, doc_types = make_sections_and_files()
+        store.save_index("test", "repo", sections, raw_files, doc_types)
+
+        changed, new, deleted = store.detect_changes("test", "repo", raw_files)
+        assert changed == []
+        assert new == []
+        assert deleted == []
+
+    def test_detect_changed_file(self, tmp_path):
+        store = make_store(tmp_path)
+        sections, raw_files, doc_types = make_sections_and_files()
+        store.save_index("test", "repo", sections, raw_files, doc_types)
+
+        current = {"README.md": SAMPLE_MD2}
+        changed, new, deleted = store.detect_changes("test", "repo", current)
+        assert "README.md" in changed
+        assert new == []
+        assert deleted == []
+
+    def test_detect_new_and_deleted(self, tmp_path):
+        store = make_store(tmp_path)
+        sections, raw_files, doc_types = make_sections_and_files()
+        store.save_index("test", "repo", sections, raw_files, doc_types)
+
+        current = {"GUIDE.md": SAMPLE_MD2}  # README.md removed, GUIDE.md added
+        changed, new, deleted = store.detect_changes("test", "repo", current)
+        assert "GUIDE.md" in new
+        assert "README.md" in deleted
+        assert changed == []
+
+    def test_no_changes_returns_early(self, tmp_path):
+        store = make_store(tmp_path)
+        sections, raw_files, doc_types = make_sections_and_files()
+        saved = store.save_index("test", "repo", sections, raw_files, doc_types)
+        original_count = len(saved.sections)
+
+        # No-op incremental save
+        updated = store.incremental_save(
+            owner="test", name="repo",
+            changed_files=[], new_files=[], deleted_files=[],
+            new_sections=[], raw_files={}, doc_types={},
+        )
+        assert updated is not None
+        assert len(updated.sections) == original_count
+
+    def test_incremental_save_changed_file(self, tmp_path):
+        store = make_store(tmp_path)
+        sections, raw_files, doc_types = make_sections_and_files()
+        store.save_index("test", "repo", sections, raw_files, doc_types)
+
+        new_sections = parse_file(SAMPLE_MD2, "README.md", "test/repo")
+        updated = store.incremental_save(
+            owner="test", name="repo",
+            changed_files=["README.md"], new_files=[], deleted_files=[],
+            new_sections=new_sections,
+            raw_files={"README.md": SAMPLE_MD2},
+            doc_types={".md": 1},
+        )
+        assert updated is not None
+        # Old README.md sections replaced by new ones
+        titles = [s["title"] for s in updated.sections]
+        assert "Section C" in titles   # new section from SAMPLE_MD2
+        assert "Section B" not in titles  # only in SAMPLE_MD, not SAMPLE_MD2
+
+    def test_incremental_save_deleted_file(self, tmp_path):
+        store = make_store(tmp_path)
+        # Index two files
+        s1 = parse_file(SAMPLE_MD, "README.md", "test/repo")
+        s2 = parse_file(SAMPLE_MD2, "GUIDE.md", "test/repo")
+        raw = {"README.md": SAMPLE_MD, "GUIDE.md": SAMPLE_MD2}
+        store.save_index("test", "repo", s1 + s2, raw, {".md": 2})
+
+        # Delete GUIDE.md
+        updated = store.incremental_save(
+            owner="test", name="repo",
+            changed_files=[], new_files=[], deleted_files=["GUIDE.md"],
+            new_sections=[], raw_files={}, doc_types={},
+        )
+        assert updated is not None
+        doc_paths = {s["doc_path"] for s in updated.sections}
+        assert "GUIDE.md" not in doc_paths
+        assert "README.md" in doc_paths
+        assert "GUIDE.md" not in updated.doc_paths
+
+    def test_incremental_content_retrievable(self, tmp_path):
+        store = make_store(tmp_path)
+        sections, raw_files, doc_types = make_sections_and_files()
+        store.save_index("test", "repo", sections, raw_files, doc_types)
+
+        new_sections = parse_file(SAMPLE_MD2, "README.md", "test/repo")
+        store.incremental_save(
+            owner="test", name="repo",
+            changed_files=["README.md"], new_files=[], deleted_files=[],
+            new_sections=new_sections,
+            raw_files={"README.md": SAMPLE_MD2},
+            doc_types={".md": 1},
+        )
+
+        # Section content must be retrievable after incremental update
+        index = store.load_index("test", "repo")
+        sec_c = next((s for s in index.sections if s["title"] == "Section C"), None)
+        assert sec_c is not None
+        content = store.get_section_content("test", "repo", sec_c["id"], _index=index)
+        assert content is not None
+        assert "Brand new section" in content

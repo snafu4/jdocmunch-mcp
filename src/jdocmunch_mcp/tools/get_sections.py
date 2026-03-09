@@ -1,6 +1,7 @@
 """Batch content retrieval for multiple sections."""
 
 import hashlib
+import os
 import time
 from typing import Optional
 
@@ -25,7 +26,7 @@ def get_sections(
     Returns:
         Dict with list of section results.
     """
-    t0 = time.time()
+    t0 = time.perf_counter()
     store = DocStore(base_path=storage_path)
     owner, name = store._resolve_repo(repo)
     index = store.load_index(owner, name)
@@ -35,6 +36,8 @@ def get_sections(
 
     results = []
     total_tokens_saved = 0
+    # Cache raw file sizes per doc_path to avoid repeated os.path.getsize calls
+    doc_raw_sizes: dict = {}
 
     for section_id in section_ids:
         sec = index.get_section(section_id)
@@ -42,7 +45,7 @@ def get_sections(
             results.append({"error": f"Section not found: {section_id}"})
             continue
 
-        content = store.get_section_content(owner, name, section_id)
+        content = store.get_section_content(owner, name, section_id, _index=index)
         if content is None:
             results.append({"error": f"Content not available for section: {section_id}"})
             continue
@@ -56,11 +59,14 @@ def get_sections(
             result_sec["hash_verified"] = (actual_hash == stored_hash) if stored_hash else None
 
         doc_path = sec.get("doc_path", "")
-        raw_bytes = sum(
-            len(s.get("content", "").encode("utf-8"))
-            for s in index.sections
-            if s.get("doc_path") == doc_path
-        )
+        if doc_path not in doc_raw_sizes:
+            try:
+                raw_file = store._safe_content_path(store._content_dir(owner, name), doc_path)
+                doc_raw_sizes[doc_path] = os.path.getsize(raw_file) if raw_file else 0
+            except OSError:
+                doc_raw_sizes[doc_path] = 0
+        raw_bytes = doc_raw_sizes[doc_path]
+
         response_bytes = len(content.encode("utf-8"))
         tokens_saved = estimate_savings(raw_bytes, response_bytes)
         total_tokens_saved += tokens_saved
@@ -70,7 +76,7 @@ def get_sections(
     total = record_savings(total_tokens_saved, storage_path)
     ca = cost_avoided(total_tokens_saved, total)
 
-    latency_ms = int((time.time() - t0) * 1000)
+    latency_ms = int((time.perf_counter() - t0) * 1000)
     return {
         "sections": results,
         "section_count": len(results),

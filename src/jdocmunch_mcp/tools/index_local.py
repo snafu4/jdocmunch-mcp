@@ -127,6 +127,7 @@ def index_local(
     storage_path: Optional[str] = None,
     extra_ignore_patterns: Optional[list] = None,
     follow_symlinks: bool = False,
+    incremental: bool = True,
 ) -> dict:
     """Index a local folder containing documentation files.
 
@@ -136,11 +137,12 @@ def index_local(
         storage_path: Custom storage path (default: ~/.doc-index/).
         extra_ignore_patterns: Additional gitignore-style patterns to exclude.
         follow_symlinks: Whether to follow symlinks.
+        incremental: When True and an existing index exists, only re-index changed files.
 
     Returns:
         Dict with indexing results.
     """
-    t0 = time.time()
+    t0 = time.perf_counter()
     folder_path = Path(path).expanduser().resolve()
 
     if not folder_path.exists():
@@ -161,52 +163,106 @@ def index_local(
         if not doc_files:
             return {"success": False, "error": "No documentation files found"}
 
-        all_sections = []
-        doc_types: dict = {}
-        raw_files: dict = {}
-        parsed_files = []
+        repo_name = folder_path.name
+        owner = "local"
+        repo_id = f"{owner}/{repo_name}"
+        store = DocStore(base_path=storage_path)
 
+        # Read all discovered files
+        current_files: dict = {}
         for file_path in doc_files:
             if not validate_path(folder_path, file_path):
                 continue
-
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="replace")
-            except Exception as e:
-                warnings.append(f"Failed to read {file_path}: {e}")
-                continue
-
             try:
                 rel_path = file_path.relative_to(folder_path).as_posix()
             except ValueError:
                 continue
-
-            ext = file_path.suffix.lower()
-            repo_name = folder_path.name
-            owner = "local"
-            repo_id = f"{owner}/{repo_name}"
-
             try:
+                content = file_path.read_text(encoding="utf-8", errors="replace")
                 parsed_content = preprocess_content(content, rel_path)
-                sections = parse_file(parsed_content, rel_path, repo_id)
+                current_files[rel_path] = parsed_content
+            except Exception as e:
+                warnings.append(f"Failed to read {file_path}: {e}")
+
+        # --- Incremental path ---
+        if incremental and store.load_index(owner, repo_name) is not None:
+            changed, new, deleted = store.detect_changes(owner, repo_name, current_files)
+
+            if not changed and not new and not deleted:
+                latency_ms = int((time.perf_counter() - t0) * 1000)
+                return {
+                    "success": True,
+                    "message": "No changes detected",
+                    "repo": f"{owner}/{repo_name}",
+                    "folder_path": str(folder_path),
+                    "incremental": True,
+                    "changed": 0, "new": 0, "deleted": 0,
+                    "_meta": {"latency_ms": latency_ms},
+                }
+
+            files_to_parse = set(changed) | set(new)
+            new_sections = []
+            raw_subset: dict = {}
+            doc_types: dict = {}
+
+            for rel_path in files_to_parse:
+                content = current_files[rel_path]
+                raw_subset[rel_path] = content
+                ext = rel_path.rsplit(".", 1)[-1].lower() if "." in rel_path else ""
+                try:
+                    sections = parse_file(content, rel_path, repo_id)
+                    if sections:
+                        new_sections.extend(sections)
+                        doc_types[f".{ext}"] = doc_types.get(f".{ext}", 0) + 1
+                except Exception as e:
+                    warnings.append(f"Failed to parse {rel_path}: {e}")
+
+            new_sections = summarize_sections(new_sections, use_ai=use_ai_summaries)
+
+            updated = store.incremental_save(
+                owner=owner, name=repo_name,
+                changed_files=changed, new_files=new, deleted_files=deleted,
+                new_sections=new_sections, raw_files=raw_subset, doc_types=doc_types,
+            )
+
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+            result = {
+                "success": True,
+                "repo": f"{owner}/{repo_name}",
+                "folder_path": str(folder_path),
+                "incremental": True,
+                "changed": len(changed), "new": len(new), "deleted": len(deleted),
+                "section_count": len(updated.sections) if updated else 0,
+                "indexed_at": updated.indexed_at if updated else "",
+                "_meta": {"latency_ms": latency_ms},
+            }
+            if warnings:
+                result["warnings"] = warnings
+            return result
+
+        # --- Full index path ---
+        all_sections = []
+        doc_types = {}
+        raw_files: dict = {}
+        parsed_files = []
+
+        for rel_path, content in current_files.items():
+            ext = f".{rel_path.rsplit('.', 1)[-1].lower()}" if "." in rel_path else ""
+            try:
+                sections = parse_file(content, rel_path, repo_id)
                 if sections:
                     all_sections.extend(sections)
                     doc_types[ext] = doc_types.get(ext, 0) + 1
-                    raw_files[rel_path] = parsed_content
+                    raw_files[rel_path] = content
                     parsed_files.append(rel_path)
             except Exception as e:
                 warnings.append(f"Failed to parse {rel_path}: {e}")
-                continue
 
         if not all_sections:
             return {"success": False, "error": "No sections extracted from files"}
 
         all_sections = summarize_sections(all_sections, use_ai=use_ai_summaries)
 
-        repo_name = folder_path.name
-        owner = "local"
-
-        store = DocStore(base_path=storage_path)
         saved = store.save_index(
             owner=owner,
             name=repo_name,
@@ -215,7 +271,7 @@ def index_local(
             doc_types=doc_types,
         )
 
-        latency_ms = int((time.time() - t0) * 1000)
+        latency_ms = int((time.perf_counter() - t0) * 1000)
         result = {
             "success": True,
             "repo": f"{owner}/{repo_name}",

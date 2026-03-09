@@ -604,3 +604,228 @@ class TestHTMLParser:
         sections = parse_file(text, "page.htm", "myrepo")
         titles = [s.title for s in sections]
         assert "Section" in titles
+
+
+# ── OpenAPI / Swagger ────────────────────────────────────────────────────────
+
+_PETSTORE_YAML = """\
+openapi: "3.0.0"
+info:
+  title: Petstore API
+  version: "1.0.0"
+  description: A sample petstore.
+paths:
+  /pets:
+    get:
+      summary: List all pets
+      tags: [pets]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Max items to return
+      responses:
+        "200":
+          description: A list of pets
+        "default":
+          description: Unexpected error
+    post:
+      summary: Create a pet
+      tags: [pets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewPet"
+      responses:
+        "201":
+          description: Null response
+components:
+  schemas:
+    Pet:
+      description: A pet object.
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        tag:
+          type: string
+    NewPet:
+      required: [name]
+      properties:
+        name:
+          type: string
+        tag:
+          type: string
+"""
+
+_SWAGGER2_JSON = """\
+{
+  "swagger": "2.0",
+  "info": {"title": "Simple API", "version": "0.1"},
+  "paths": {
+    "/items": {
+      "get": {
+        "summary": "List items",
+        "responses": {"200": {"description": "OK"}}
+      }
+    }
+  },
+  "definitions": {
+    "Item": {
+      "properties": {
+        "id": {"type": "integer"},
+        "name": {"type": "string", "description": "Item name"}
+      }
+    }
+  }
+}
+"""
+
+
+class TestSniffOpenAPI:
+    def test_yaml_openapi3(self):
+        from jdocmunch_mcp.parser.openapi_parser import sniff_openapi
+        assert sniff_openapi(_PETSTORE_YAML, ".yaml") is True
+
+    def test_json_swagger2(self):
+        from jdocmunch_mcp.parser.openapi_parser import sniff_openapi
+        assert sniff_openapi(_SWAGGER2_JSON, ".json") is True
+
+    def test_plain_yaml_not_openapi(self):
+        from jdocmunch_mcp.parser.openapi_parser import sniff_openapi
+        assert sniff_openapi("name: myapp\nversion: 1.0\n", ".yaml") is False
+
+    def test_wrong_extension(self):
+        from jdocmunch_mcp.parser.openapi_parser import sniff_openapi
+        assert sniff_openapi(_PETSTORE_YAML, ".txt") is False
+
+    def test_md_extension(self):
+        from jdocmunch_mcp.parser.openapi_parser import sniff_openapi
+        assert sniff_openapi("openapi: 3.0.0\n", ".md") is False
+
+
+class TestConvertOpenAPI:
+    def test_title_in_output(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        md = convert_openapi(_PETSTORE_YAML)
+        assert md.startswith("# Petstore API")
+
+    def test_version_in_output(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        md = convert_openapi(_PETSTORE_YAML)
+        assert "1.0.0" in md
+
+    def test_tag_section(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        md = convert_openapi(_PETSTORE_YAML)
+        assert "## pets" in md
+
+    def test_operation_headings(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        md = convert_openapi(_PETSTORE_YAML)
+        assert "### GET /pets" in md
+        assert "### POST /pets" in md
+
+    def test_operation_summary(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        md = convert_openapi(_PETSTORE_YAML)
+        assert "List all pets" in md
+
+    def test_parameter_rendered(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        md = convert_openapi(_PETSTORE_YAML)
+        assert "`limit`" in md
+        assert "query" in md
+
+    def test_request_body_rendered(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        md = convert_openapi(_PETSTORE_YAML)
+        assert "Request Body" in md
+        assert "NewPet" in md
+
+    def test_responses_rendered(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        md = convert_openapi(_PETSTORE_YAML)
+        assert "`200`" in md
+        assert "A list of pets" in md
+
+    def test_schemas_section(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        md = convert_openapi(_PETSTORE_YAML)
+        assert "## Schemas" in md
+        assert "### Pet" in md
+
+    def test_schema_properties(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        md = convert_openapi(_PETSTORE_YAML)
+        assert "`id`" in md
+        assert "`name`" in md
+        assert "*(required)*" in md
+
+    def test_swagger2_json(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        md = convert_openapi(_SWAGGER2_JSON)
+        assert "# Simple API" in md
+        assert "### GET /items" in md
+        assert "## Schemas" in md
+        assert "### Item" in md
+
+    def test_non_openapi_returns_empty(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        assert convert_openapi("name: myapp\nversion: 1\n") == ""
+
+    def test_invalid_content_returns_empty(self):
+        from jdocmunch_mcp.parser.openapi_parser import convert_openapi
+        assert convert_openapi("{{not valid yaml or json{{") == ""
+
+
+class TestOpenAPIDispatch:
+    def test_yaml_dispatch(self):
+        md = preprocess_content(_PETSTORE_YAML, "openapi.yaml")
+        sections = parse_file(md, "openapi.yaml", "myrepo")
+        titles = [s.title for s in sections]
+        assert "Petstore API" in titles
+
+    def test_yml_dispatch(self):
+        md = preprocess_content(_PETSTORE_YAML, "spec.yml")
+        sections = parse_file(md, "spec.yml", "myrepo")
+        assert len(sections) > 0
+
+    def test_json_dispatch(self):
+        md = preprocess_content(_SWAGGER2_JSON, "swagger.json")
+        sections = parse_file(md, "swagger.json", "myrepo")
+        titles = [s.title for s in sections]
+        assert "Simple API" in titles
+
+    def test_non_openapi_yaml_produces_no_sections(self):
+        content = "name: myapp\nversion: 1.0\nenv: production\n"
+        preprocessed = preprocess_content(content, "config.yaml")
+        sections = parse_file(preprocessed, "config.yaml", "myrepo")
+        assert sections == []
+
+    def test_tag_becomes_section(self):
+        md = preprocess_content(_PETSTORE_YAML, "api.yaml")
+        sections = parse_file(md, "api.yaml", "myrepo")
+        titles = [s.title for s in sections]
+        assert "pets" in titles
+
+    def test_operations_are_subsections(self):
+        md = preprocess_content(_PETSTORE_YAML, "api.yaml")
+        sections = parse_file(md, "api.yaml", "myrepo")
+        titles = [s.title for s in sections]
+        assert any("GET /pets" in t for t in titles)
+        assert any("POST /pets" in t for t in titles)
+
+    def test_schemas_section_indexed(self):
+        md = preprocess_content(_PETSTORE_YAML, "api.yaml")
+        sections = parse_file(md, "api.yaml", "myrepo")
+        titles = [s.title for s in sections]
+        assert "Schemas" in titles
+        assert "Pet" in titles

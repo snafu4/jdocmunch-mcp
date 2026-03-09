@@ -8,10 +8,10 @@ from ..storage import DocStore
 
 def list_repos(storage_path: Optional[str] = None) -> dict:
     """List all indexed documentation repositories."""
-    t0 = time.time()
+    t0 = time.perf_counter()
     store = DocStore(base_path=storage_path)
     repos = store.list_repos()
-    latency_ms = int((time.time() - t0) * 1000)
+    latency_ms = int((time.perf_counter() - t0) * 1000)
     return {
         "repos": repos,
         "count": len(repos),

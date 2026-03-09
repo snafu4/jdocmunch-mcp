@@ -1,24 +1,28 @@
-## Cut documentation-reading token costs by up to **98%**
+## Stop Feeding Documentation Trees to Your AI
 
-Most AI agents explore documentation the expensive way:
-open entire files → skim hundreds of irrelevant paragraphs → repeat.
+Most AI agents still explore documentation the expensive way:
 
-**jDocMunch indexes a documentation set once and lets agents retrieve only the exact sections they need** — with byte-level precision.
+open file → skim hundreds of irrelevant paragraphs → open another file → repeat
 
-| Task                          | Traditional approach | With jDocMunch  |
-| ----------------------------- | -------------------- | --------------- |
-| Find a configuration section  | ~12,000 tokens       | ~400 tokens     |
-| Browse documentation structure| ~40,000 tokens       | ~800 tokens     |
-| Explore a full doc set        | ~100,000 tokens      | ~2k tokens      |
+That burns tokens, floods context windows with noise, and forces models to reason through a lot of text they never needed in the first place.
 
-Index once. Query cheaply forever.
-Precision context beats brute-force context.
+**jDocMunch-MCP lets AI agents navigate documentation by section instead of reading files by brute force.**  
+It indexes a documentation set once, then retrieves exactly the section the agent actually needs, with byte-precise extraction from the original file.
+
+| Task | Traditional approach | With jDocMunch |
+| --- | ---: | ---: |
+| Find a configuration section | ~12,000 tokens | ~400 tokens |
+| Browse documentation structure | ~40,000 tokens | ~800 tokens |
+| Explore a full doc set | ~100,000 tokens | ~2,000 tokens |
+
+Index once. Query cheaply forever.  
+**Precision context beats brute-force context.**
 
 ---
 
 # jDocMunch MCP
 
-### Structured documentation retrieval for serious AI agents
+### AI-native documentation navigation for serious agents
 
 ![License](https://img.shields.io/badge/license-dual--use-blue)
 ![MCP](https://img.shields.io/badge/MCP-compatible-purple)
@@ -26,44 +30,145 @@ Precision context beats brute-force context.
 [![PyPI version](https://img.shields.io/pypi/v/jdocmunch-mcp)](https://pypi.org/project/jdocmunch-mcp/)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/jdocmunch-mcp)](https://pypi.org/project/jdocmunch-mcp/)
 
-**Stop dumping documentation files into context windows. Start retrieving exactly what the agent needs.**
+> ## Commercial licenses
+> jCodeMunch-MCP is **free for non-commercial use**.  Tip jar: (https://gravelle.gumroad.com/coffee)
+> 
+> **Commercial use requires a paid license.**
+>
+> **jCodeMunch-only licenses**
+> - [Builder](https://gravelle.gumroad.com/l/jCodeMunchMCP_builder) — 1 developer
+> - [Studio](https://gravelle.gumroad.com/l/jCodeMunchMCP_studio) — up to 5 developers
+> - [Platform](https://gravelle.gumroad.com/l/jCodeMunchMCP_platform) — org-wide internal deployment
+>
+> **Want both code and docs retrieval?**
+> - [Munch Duo Builder Bundle](https://gravelle.gumroad.com/l/MunchDuoBuilderBundle)
+> - [Munch Duo Studio Bundle](https://gravelle.gumroad.com/l/MunchDuoStudioBundle)
+> - [Munch Duo Platform Bundle](https://gravelle.gumroad.com/l/MunchDuoPlatformBundle)
 
-jDocMunch indexes documentation files once by their heading hierarchy, then allows MCP-compatible agents (Claude Desktop, VS Code, Google Antigravity, and others) to **discover and retrieve content by section** instead of brute-reading files.
+**Stop dumping documentation files into context windows. Start navigating docs structurally.**
+
+jDocMunch indexes documentation once by heading hierarchy and section structure, then gives MCP-compatible agents precise access to the explanations they actually need instead of forcing them to brute-read files.
+
+It is built for workflows where token efficiency, context hygiene, and agent reliability matter.
+
+---
+
+## Why this exists
+
+Large context windows do not fix bad retrieval.
+
+Agents waste money and reasoning bandwidth when they:
+
+- open entire documents to find one configuration block
+- repeatedly re-read headings, boilerplate, and unrelated sections
+- lose important explanations inside oversized context payloads
+- consume documentation as flat text instead of structured knowledge
+
+jDocMunch fixes that by changing the unit of access from **file** to **section**.
+
+Instead of handing an agent an entire document, it can retrieve exactly:
+
+- an installation section
+- a configuration section
+- an API explanation
+- a troubleshooting section
+- a specific subtree of related headings
+
+That makes documentation exploration cheaper, faster, and more stable.
+
+---
+
+## What makes it different
+
+### Section-first retrieval
+Search and retrieve documentation by section, not just file path or keyword match.
+
+### Byte-precise extraction
+Full content is pulled on demand from exact byte offsets into the original file.
+
+### Stable section IDs
+Sections retain durable identities across re-indexing when path, heading text, and heading level remain unchanged.
+
+### Local-first architecture
+Indexes and raw docs are stored locally. No hosted dependency required.
+
+### MCP-native workflow
+Works with Claude Desktop, Claude Code, Google Antigravity, and other MCP-compatible clients.
+
+---
+
+## What gets indexed
 
 Every section stores:
-- Title and heading level
-- One-line summary
-- Tags and references extracted from content
-- SHA-256 content hash (drift detection)
-- Byte offsets into the original file
 
-Full content is retrieved on demand using O(1) byte-offset seeking.
+- title and heading level
+- one-line summary
+- extracted tags and references
+- SHA-256 content hash for drift detection
+- byte offsets into the original file
+
+This allows agents to discover documentation structurally, then request only the specific section they need.
+
+---
+
+## Why agents need this
+
+Traditional doc retrieval methods all break in different ways:
+
+- **File scanning** loads far too much irrelevant text
+- **Keyword search** finds terms but often loses context
+- **Chunking** breaks authored hierarchy and separates explanations from examples
+
+jDocMunch preserves the structure the human author intended:
+
+- heading hierarchy
+- parent/child relationships
+- section boundaries
+- coherent explanatory units
+
+Agents do not need bigger context windows.  
+They need better navigation.
 
 ---
 
 ## How it works
 
-1. **Discovery** — GitHub API or local directory walk
-2. **Security filtering** — traversal protection, secret exclusion, binary detection
-3. **Parsing** — heading-based section splitting (ATX, setext, MDX-aware)
-4. **Hierarchy wiring** — parent/child relationships established
-5. **Summarization** — heading text → AI batch → title fallback
-6. **Storage** — JSON index + raw files stored locally (`~/.doc-index/`)
-7. **Retrieval** — O(1) byte-offset seeking via stable section IDs
+1. **Discovery**  
+   GitHub API or local directory walk
 
-### Stable Section IDs
+2. **Security filtering**  
+   Traversal protection, secret exclusion, binary detection
 
-```
+3. **Parsing**  
+   Heading-based section splitting (`#`, setext, and MDX-aware preprocessing)
+
+4. **Hierarchy wiring**  
+   Parent/child relationships established
+
+5. **Summarization**  
+   Heading text → AI batch summaries → title fallback
+
+6. **Storage**  
+   JSON index + raw files stored locally under `~/.doc-index/`
+
+7. **Retrieval**  
+   O(1) byte-offset seeking via stable section IDs
+
+---
+
+## Stable section IDs
+
+```text
 {repo}::{doc_path}::{slug}#{level}
-```
+````
 
 Examples:
 
-- `owner/repo::docs/install.md::installation#1`
-- `owner/repo::README.md::quick-start#2`
-- `local/myproject::guide.md::configuration#2`
+* `owner/repo::docs/install.md::installation#1`
+* `owner/repo::README.md::quick-start#2`
+* `local/myproject::guide.md::configuration#2`
 
-IDs remain stable across re-indexing when the file path, heading text, and heading level are unchanged.
+IDs remain stable across re-indexing when the file path, heading text, and heading level do not change.
 
 ---
 
@@ -71,8 +176,8 @@ IDs remain stable across re-indexing when the file path, heading text, and headi
 
 ### Prerequisites
 
-- Python 3.10+
-- pip
+* Python 3.10+
+* `pip`
 
 ### Install
 
@@ -88,24 +193,29 @@ jdocmunch-mcp --help
 
 ---
 
-## Configure MCP Client
+## Configure an MCP client
 
-> **PATH note:** MCP clients often run with a limited environment where `jdocmunch-mcp` may not be found even if it works in your terminal. Using [`uvx`](https://github.com/astral-sh/uv) is the recommended approach — it resolves the package on demand without requiring anything to be on your system PATH. If you prefer `pip install`, use the absolute path to the executable instead:
-> - **Linux:** `/home/<username>/.local/bin/jdocmunch-mcp`
-> - **macOS:** `/Users/<username>/.local/bin/jdocmunch-mcp`
-> - **Windows:** `C:\\Users\\<username>\\AppData\\Roaming\\Python\\Python3xx\\Scripts\\jdocmunch-mcp.exe`
+> **PATH note:** MCP clients often run with a restricted environment where `jdocmunch-mcp` may not be found even if it works in your shell. Using [`uvx`](https://github.com/astral-sh/uv) is the recommended approach because it resolves the package on demand without relying on your system PATH. If you prefer `pip install`, use the absolute path to the executable instead.
 
-### Claude Desktop / Claude Code
+### Common executable paths
+
+* **Linux:** `/home/<username>/.local/bin/jdocmunch-mcp`
+* **macOS:** `/Users/<username>/.local/bin/jdocmunch-mcp`
+* **Windows:** `C:\\Users\\<username>\\AppData\\Roaming\\Python\\Python3xx\\Scripts\\jdocmunch-mcp.exe`
+
+---
+
+## Claude Desktop / Claude Code
 
 Config file location:
 
-| OS      | Path |
-| ------- | ---- |
+| OS      | Path                                                              |
+| ------- | ----------------------------------------------------------------- |
 | macOS   | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Linux   | `~/.config/claude/claude_desktop_config.json` |
-| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Linux   | `~/.config/claude/claude_desktop_config.json`                     |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json`                     |
 
-**Minimal config (no API keys needed):**
+### Minimal config
 
 ```json
 {
@@ -118,7 +228,7 @@ Config file location:
 }
 ```
 
-**With optional AI summaries and GitHub auth:**
+### With optional AI summaries and GitHub auth
 
 ```json
 {
@@ -135,13 +245,16 @@ Config file location:
 }
 ```
 
-After saving the config, **restart Claude Desktop / Claude Code** for the server to appear.
+After saving the config, **restart Claude Desktop / Claude Code**.
 
-### Google Antigravity
+---
 
-1. Open the Agent pane → click the `⋯` menu → **MCP Servers** → **Manage MCP Servers**
-2. Click **View raw config** to open `mcp_config.json`
-3. Add the entry below, save, then restart the MCP server from the Manage MCPs pane
+## Google Antigravity
+
+1. Open the Agent pane
+2. Click the `⋯` menu → **MCP Servers** → **Manage MCP Servers**
+3. Click **View raw config** to open `mcp_config.json`
+4. Add the entry below, save, then restart the MCP server
 
 ```json
 {
@@ -156,9 +269,9 @@ After saving the config, **restart Claude Desktop / Claude Code** for the server
 
 ---
 
-## Usage Examples
+## Usage examples
 
-```
+```json
 index_local:          { "path": "/path/to/docs" }
 index_repo:           { "url": "owner/repo" }
 
@@ -171,22 +284,24 @@ get_section:          { "repo": "owner/repo", "section_id": "owner/repo::docs/co
 
 ---
 
-## Tools (10)
+## Tool surface
 
-| Tool                   | Purpose                                   |
-| ---------------------- | ----------------------------------------- |
-| `index_local`          | Index a local documentation folder        |
-| `index_repo`           | Index a GitHub repository's docs          |
-| `list_repos`           | List indexed documentation sets           |
-| `get_toc`              | Flat section list in document order       |
-| `get_toc_tree`         | Nested section tree per document          |
-| `get_document_outline` | Section hierarchy for one document        |
-| `search_sections`      | Weighted search returning summaries only  |
-| `get_section`          | Full content of one section               |
-| `get_sections`         | Batch content retrieval                   |
-| `delete_index`         | Remove a doc index                        |
+| Tool                   | Purpose                                  |
+| ---------------------- | ---------------------------------------- |
+| `index_local`          | Index a local documentation folder       |
+| `index_repo`           | Index a GitHub repository’s docs         |
+| `list_repos`           | List indexed documentation sets          |
+| `get_toc`              | Flat section list in document order      |
+| `get_toc_tree`         | Nested section tree per document         |
+| `get_document_outline` | Section hierarchy for one document       |
+| `search_sections`      | Weighted search returning summaries only |
+| `get_section`          | Full content of one section              |
+| `get_sections`         | Batch content retrieval                  |
+| `delete_index`         | Remove a doc index                       |
 
-Search and retrieval tools include a `_meta` envelope with timing, token savings, and cost avoided:
+Search and retrieval tools include a `_meta` envelope with timing, token savings, and cost avoided.
+
+Example:
 
 ```json
 "_meta": {
@@ -199,125 +314,150 @@ Search and retrieval tools include a `_meta` envelope with timing, token savings
 }
 ```
 
-`total_tokens_saved` and `total_cost_avoided` accumulate across all tool calls and persist to `~/.doc-index/_savings.json`.
+`total_tokens_saved` and `total_cost_avoided` accumulate across tool calls and persist to `~/.doc-index/_savings.json`.
 
 ---
 
-## Supported Formats
+## Supported formats
 
-| Format     | Extensions                    | Notes                                                            |
-| ---------- | ----------------------------- | ---------------------------------------------------------------- |
-| Markdown   | `.md`, `.markdown`            | ATX (`# Heading`) and setext (underline) headings               |
-| MDX        | `.mdx`                        | JSX tags, frontmatter, import/export stripped before parsing    |
-| Plain text | `.txt`                        | Paragraph-block section splitting                                |
-| RST        | `.rst`                        | Treated as plain text (heading detection planned)               |
+| Format     | Extensions         | Notes                                                           |
+| ---------- | ------------------ | --------------------------------------------------------------- |
+| Markdown   | `.md`, `.markdown` | ATX (`# Heading`) and setext headings                           |
+| MDX        | `.mdx`             | JSX tags, frontmatter, import/export stripped before parsing    |
+| Plain text | `.txt`             | Paragraph-block section splitting                               |
+| RST        | `.rst`             | Treated as plain text for now; richer heading detection planned |
 
-See ARCHITECTURE.md for parser details.
+See `ARCHITECTURE.md` for parser details.
 
 ---
 
 ## Security
 
-Built-in protections:
+Built-in protections include:
 
-- Path traversal prevention
-- Symlink escape protection
-- Secret file exclusion (`.env`, `*.pem`, etc.)
-- Binary file detection
-- Configurable file size limits (500 KB default)
-- Storage path injection prevention via `_safe_content_path()`
-- Atomic index writes (temp file + rename)
+* path traversal prevention
+* symlink escape protection
+* secret file exclusion (`.env`, `*.pem`, and similar)
+* binary file detection
+* configurable file size limits
+* storage path injection prevention via `_safe_content_path()`
+* atomic index writes
 
-See SECURITY.md for details.
-
----
-
-## Best Use Cases
-
-- Agent-driven documentation exploration
-- Finding configuration and API reference sections
-- Onboarding to unfamiliar frameworks
-- Token-efficient multi-agent documentation workflows
-- Large documentation sets with dozens of files
+See `SECURITY.md` for details.
 
 ---
 
-## Not Intended For
+## Best use cases
 
-- Source code symbol indexing (use [jCodeMunch](https://github.com/jgravelle/jcodemunch-mcp) for that)
-- Real-time file watching
-- Cross-repository global search
-- Semantic/vector similarity search
+* agent-driven documentation exploration
+* finding configuration and API reference sections
+* onboarding to unfamiliar frameworks
+* token-efficient multi-agent documentation workflows
+* large documentation sets with dozens of files
 
 ---
 
-## Environment Variables
+## Not intended for
 
-| Variable                     | Purpose                   | Required |
-| ---------------------------- | ------------------------- | -------- |
-| `GITHUB_TOKEN`               | GitHub API auth           | No       |
-| `ANTHROPIC_API_KEY`          | Section summaries via Claude Haiku (takes priority) | No |
-| `GOOGLE_API_KEY`             | Section summaries via Gemini Flash | No |
-| `DOC_INDEX_PATH`             | Custom cache path         | No       |
-| `JDOCMUNCH_SHARE_SAVINGS`    | Set to `0` to disable anonymous community token savings reporting | No |
+* source code symbol indexing (use [jCodeMunch](https://github.com/jgravelle/jcodemunch-mcp) for that)
+* real-time file watching
+* cross-repository global search
+* semantic/vector similarity search as a standalone product goal
 
-### Community Savings Meter
+---
 
-Each tool call contributes an anonymous delta to a live global counter at [j.gravelle.us](https://j.gravelle.us). Only two values are ever sent: the tokens saved (a number) and a random anonymous install ID — never content, paths, repo names, or anything identifying. The anon ID is generated once and stored in `~/.doc-index/_savings.json`.
+## Environment variables
 
-To disable, set `JDOCMUNCH_SHARE_SAVINGS=0` in your MCP server env.
+| Variable                  | Purpose                                                           | Required |
+| ------------------------- | ----------------------------------------------------------------- | -------- |
+| `GITHUB_TOKEN`            | GitHub API auth                                                   | No       |
+| `ANTHROPIC_API_KEY`       | Section summaries via Claude Haiku                                | No       |
+| `GOOGLE_API_KEY`          | Section summaries via Gemini Flash                                | No       |
+| `DOC_INDEX_PATH`          | Custom cache path                                                 | No       |
+| `JDOCMUNCH_SHARE_SAVINGS` | Set to `0` to disable anonymous community token savings reporting | No       |
+
+---
+
+## Community savings meter
+
+Each tool call can contribute an anonymous delta to a live global counter at [j.gravelle.us](https://j.gravelle.us). Only two values are sent:
+
+* tokens saved
+* a random anonymous install ID
+
+No content, file paths, repo names, or identifying material are sent.
+
+The anonymous install ID is generated once and stored in `~/.doc-index/_savings.json`.
+
+To disable reporting, set:
+
+```bash
+JDOCMUNCH_SHARE_SAVINGS=0
+```
 
 ---
 
 ## Documentation
 
-- [USER_GUIDE.md](USER_GUIDE.md)
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [SPEC.md](SPEC.md)
-- [SECURITY.md](SECURITY.md)
-- [TOKEN_SAVINGS.md](TOKEN_SAVINGS.md)
+* [USER_GUIDE.md](USER_GUIDE.md)
+* [ARCHITECTURE.md](ARCHITECTURE.md)
+* [SPEC.md](SPEC.md)
+* [SECURITY.md](SECURITY.md)
+* [TOKEN_SAVINGS.md](TOKEN_SAVINGS.md)
 
 ---
 
-## License (Dual Use)
+## License (dual use)
 
 This repository is **free for non-commercial use** under the terms below.
 **Commercial use requires a paid commercial license.**
 
 ---
 
-## Copyright and License Text
+## Star History
+
+<a href="https://www.star-history.com/?repos=jgravelle%2Fjdocmunch-mcp&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=jgravelle/jdocmunch-mcp&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=jgravelle/jdocmunch-mcp&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=jgravelle/jdocmunch-mcp&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
+
+## Copyright and license text
 
 Copyright (c) 2026 J. Gravelle
 
-### 1. Non-Commercial License Grant (Free)
+### 1. Non-commercial license grant (free)
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to use, copy, modify, merge, publish, and distribute the Software for **personal, educational, research, hobby, or other non-commercial purposes**, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to use, copy, modify, merge, publish, and distribute the Software for **personal, educational, research, hobby, or other non-commercial purposes**, subject to the following conditions:
 
 1. The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
 2. Any modifications made to the Software must clearly indicate that they are derived from the original work, and the name of the original author (J. Gravelle) must remain intact. He's kinda full of himself.
-
 3. Redistributions of the Software in source code form must include a prominent notice describing any modifications from the original version.
 
-### 2. Commercial Use
+### 2. Commercial use
 
 Commercial use of the Software requires a separate paid commercial license from the author.
 
-"Commercial use" includes, but is not limited to:
+“Commercial use” includes, but is not limited to:
 
-- Use of the Software in a business environment
-- Internal use within a for-profit organization
-- Incorporation into a product or service offered for sale
-- Use in connection with revenue generation, consulting, SaaS, hosting, or fee-based services
+* use of the Software in a business environment
+* internal use within a for-profit organization
+* incorporation into a product or service offered for sale
+* use in connection with revenue generation, consulting, SaaS, hosting, or fee-based services
 
-For commercial licensing inquiries, contact:
-j@gravelle.us | https://j.gravelle.us
+For commercial licensing inquiries:
+**[j@gravelle.us](mailto:j@gravelle.us)**
+**[https://j.gravelle.us](https://j.gravelle.us)**
 
 Until a commercial license is obtained, commercial use is not permitted.
 
-### 3. Disclaimer of Warranty
+### 3. Disclaimer of warranty
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
 
 IN NO EVENT SHALL THE AUTHOR OR COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+

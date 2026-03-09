@@ -31,12 +31,13 @@ class DocIndex:
     index_version: int = INDEX_VERSION
     file_hashes: dict = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        # Build O(1) lookup dict once at load time
+        self._section_index: dict = {s["id"]: s for s in self.sections if "id" in s}
+
     def get_section(self, section_id: str) -> Optional[dict]:
-        """Find a section dict by ID."""
-        for sec in self.sections:
-            if sec.get("id") == section_id:
-                return sec
-        return None
+        """Find a section dict by ID (O(1))."""
+        return self._section_index.get(section_id)
 
     def search(self, query: str, doc_path: Optional[str] = None, max_results: int = 10) -> list:
         """Search sections with weighted scoring.
@@ -214,9 +215,134 @@ class DocStore:
             file_hashes=data.get("file_hashes", {}),
         )
 
-    def get_section_content(self, owner: str, name: str, section_id: str) -> Optional[str]:
-        """Read section content using stored byte offsets. O(1) — no re-parsing."""
+    def detect_changes(
+        self,
+        owner: str,
+        name: str,
+        current_files: dict,
+    ) -> tuple:
+        """Detect changed, new, and deleted files by comparing hashes.
+
+        Returns (changed, new, deleted) — each a list of doc_path strings.
+        """
         index = self.load_index(owner, name)
+        if not index:
+            return [], list(current_files.keys()), []
+
+        old_hashes = index.file_hashes
+        current_hashes = {fp: _file_hash(c) for fp, c in current_files.items()}
+
+        old_set = set(old_hashes.keys())
+        new_set = set(current_hashes.keys())
+
+        new_files = list(new_set - old_set)
+        deleted_files = list(old_set - new_set)
+        changed_files = [
+            fp for fp in (old_set & new_set)
+            if old_hashes[fp] != current_hashes[fp]
+        ]
+
+        return changed_files, new_files, deleted_files
+
+    def incremental_save(
+        self,
+        owner: str,
+        name: str,
+        changed_files: list,
+        new_files: list,
+        deleted_files: list,
+        new_sections: list,     # list[Section]
+        raw_files: dict,        # {doc_path: content} for changed + new files only
+        doc_types: dict,
+    ) -> Optional["DocIndex"]:
+        """Incrementally update an existing index.
+
+        Removes sections for deleted/changed files, adds new sections,
+        updates raw content files, and saves atomically.
+        """
+        index = self.load_index(owner, name)
+        if not index:
+            return None
+
+        # Drop sections belonging to deleted or changed files
+        files_to_remove = set(deleted_files) | set(changed_files)
+        kept_sections = [s for s in index.sections if s.get("doc_path") not in files_to_remove]
+
+        # Merge in new sections
+        all_section_dicts = kept_sections + [s.to_dict() for s in new_sections]
+
+        # Recompute doc_types from surviving + new sections
+        seen: dict = {}
+        for s in all_section_dicts:
+            dp = s.get("doc_path", "")
+            if dp and dp not in seen:
+                import os as _os
+                seen[dp] = _os.path.splitext(dp)[1].lower()
+        recomputed_types: dict = {}
+        for ext in seen.values():
+            recomputed_types[ext] = recomputed_types.get(ext, 0) + 1
+        if not recomputed_types and doc_types:
+            recomputed_types = doc_types
+
+        # Update doc_paths list
+        old_paths = set(index.doc_paths)
+        for f in deleted_files:
+            old_paths.discard(f)
+        for f in new_files + changed_files:
+            old_paths.add(f)
+
+        # Update file hashes
+        file_hashes = dict(index.file_hashes)
+        for f in deleted_files:
+            file_hashes.pop(f, None)
+        for fp, content in raw_files.items():
+            file_hashes[fp] = _file_hash(content)
+
+        updated = DocIndex(
+            repo=f"{owner}/{name}",
+            owner=owner,
+            name=name,
+            indexed_at=datetime.now().isoformat(),
+            doc_paths=sorted(old_paths),
+            doc_types=recomputed_types,
+            sections=all_section_dicts,
+            index_version=INDEX_VERSION,
+            file_hashes=file_hashes,
+        )
+
+        # Save atomically
+        index_path = self._index_path(owner, name)
+        tmp_path = index_path.with_suffix(".json.tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(self._index_to_dict(updated), f, indent=2)
+        tmp_path.replace(index_path)
+
+        # Update cached raw files
+        content_dir = self._content_dir(owner, name)
+        content_dir.mkdir(parents=True, exist_ok=True)
+
+        for fp in deleted_files:
+            dead = self._safe_content_path(content_dir, fp)
+            if dead and dead.exists():
+                dead.unlink()
+
+        for fp, content in raw_files.items():
+            dest = self._safe_content_path(content_dir, fp)
+            if not dest:
+                raise ValueError(f"Unsafe doc path in raw_files: {fp}")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with open(dest, "wb") as f:
+                f.write(content.encode("utf-8"))
+
+        return updated
+
+    def get_section_content(self, owner: str, name: str, section_id: str, _index: Optional["DocIndex"] = None) -> Optional[str]:
+        """Read section content using stored byte offsets. O(1) — no re-parsing.
+
+        Pass _index to avoid a redundant load_index() call when the caller
+        already holds a loaded index.
+        """
+        index = _index or self.load_index(owner, name)
         if not index:
             return None
 

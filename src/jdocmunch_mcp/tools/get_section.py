@@ -1,6 +1,7 @@
 """Byte-range content retrieval for one section."""
 
 import hashlib
+import os
 import time
 from typing import Optional
 
@@ -25,7 +26,7 @@ def get_section(
     Returns:
         Dict with section content and metadata.
     """
-    t0 = time.time()
+    t0 = time.perf_counter()
     store = DocStore(base_path=storage_path)
     owner, name = store._resolve_repo(repo)
     index = store.load_index(owner, name)
@@ -37,7 +38,7 @@ def get_section(
     if not sec:
         return {"error": f"Section not found: {section_id}"}
 
-    content = store.get_section_content(owner, name, section_id)
+    content = store.get_section_content(owner, name, section_id, _index=index)
     if content is None:
         return {"error": f"Content not available for section: {section_id}"}
 
@@ -49,19 +50,21 @@ def get_section(
         stored_hash = sec.get("content_hash", "")
         result_sec["hash_verified"] = (actual_hash == stored_hash) if stored_hash else None
 
-    # Token savings: whole doc bytes vs this section bytes
+    # Token savings: raw file size vs this section's bytes
     doc_path = sec.get("doc_path", "")
-    raw_bytes = sum(
-        len(s.get("content", "").encode("utf-8"))
-        for s in index.sections
-        if s.get("doc_path") == doc_path
-    )
+    raw_bytes = 0
+    try:
+        raw_file = store._safe_content_path(store._content_dir(owner, name), doc_path)
+        if raw_file:
+            raw_bytes = os.path.getsize(raw_file)
+    except OSError:
+        pass
     response_bytes = len(content.encode("utf-8"))
     tokens_saved = estimate_savings(raw_bytes, response_bytes)
     total = record_savings(tokens_saved, storage_path)
     ca = cost_avoided(tokens_saved, total)
 
-    latency_ms = int((time.time() - t0) * 1000)
+    latency_ms = int((time.perf_counter() - t0) * 1000)
     return {
         "section": result_sec,
         "_meta": {

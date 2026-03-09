@@ -120,6 +120,7 @@ async def index_repo(
     use_ai_summaries: bool = True,
     github_token: Optional[str] = None,
     storage_path: Optional[str] = None,
+    incremental: bool = True,
 ) -> dict:
     """Index a GitHub repository's documentation.
 
@@ -128,11 +129,12 @@ async def index_repo(
         use_ai_summaries: Whether to use AI for section summaries.
         github_token: GitHub API token (optional).
         storage_path: Custom storage path.
+        incremental: When True and an existing index exists, only re-index changed files.
 
     Returns:
         Dict with indexing results.
     """
-    t0 = time.time()
+    t0 = time.perf_counter()
 
     try:
         owner, repo = parse_github_url(url)
@@ -181,13 +183,12 @@ async def index_repo(
             tasks = [fetch_with_limit(p) for p in source_files]
             file_contents = await asyncio.gather(*tasks)
 
-        all_sections = []
-        doc_types: dict = {}
-        raw_files: dict = {}
-        parsed_files = []
-        repo_id = f"{owner}/{repo}"
-
         import os as _os
+        repo_id = f"{owner}/{repo}"
+        store = DocStore(base_path=storage_path)
+
+        # Build current_files map (preprocessed content keyed by path)
+        current_files: dict = {}
         for path, content in file_contents:
             if not content:
                 continue
@@ -195,23 +196,87 @@ async def index_repo(
             if ext.lower() not in ALL_EXTENSIONS:
                 continue
             try:
-                parsed_content = preprocess_content(content, path)
-                sections = parse_file(parsed_content, path, repo_id)
+                current_files[path] = preprocess_content(content, path)
+            except Exception:
+                warnings.append(f"Failed to preprocess {path}")
+
+        # --- Incremental path ---
+        if incremental and store.load_index(owner, repo) is not None:
+            changed, new, deleted = store.detect_changes(owner, repo, current_files)
+
+            if not changed and not new and not deleted:
+                latency_ms = int((time.perf_counter() - t0) * 1000)
+                return {
+                    "success": True,
+                    "message": "No changes detected",
+                    "repo": f"{owner}/{repo}",
+                    "incremental": True,
+                    "changed": 0, "new": 0, "deleted": 0,
+                    "_meta": {"latency_ms": latency_ms},
+                }
+
+            files_to_parse = set(changed) | set(new)
+            new_sections = []
+            raw_subset: dict = {}
+            doc_types: dict = {}
+
+            for path in files_to_parse:
+                content = current_files[path]
+                raw_subset[path] = content
+                _, ext = _os.path.splitext(path)
+                try:
+                    sections = parse_file(content, path, repo_id)
+                    if sections:
+                        new_sections.extend(sections)
+                        doc_types[ext.lower()] = doc_types.get(ext.lower(), 0) + 1
+                except Exception:
+                    warnings.append(f"Failed to parse {path}")
+
+            new_sections = summarize_sections(new_sections, use_ai=use_ai_summaries)
+
+            updated = store.incremental_save(
+                owner=owner, name=repo,
+                changed_files=changed, new_files=new, deleted_files=deleted,
+                new_sections=new_sections, raw_files=raw_subset, doc_types=doc_types,
+            )
+
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+            result = {
+                "success": True,
+                "repo": f"{owner}/{repo}",
+                "incremental": True,
+                "changed": len(changed), "new": len(new), "deleted": len(deleted),
+                "section_count": len(updated.sections) if updated else 0,
+                "indexed_at": updated.indexed_at if updated else "",
+                "_meta": {"latency_ms": latency_ms},
+            }
+            if warnings:
+                result["warnings"] = warnings
+            return result
+
+        # --- Full index path ---
+        all_sections = []
+        doc_types = {}
+        raw_files: dict = {}
+        parsed_files = []
+
+        for path, content in current_files.items():
+            _, ext = _os.path.splitext(path)
+            try:
+                sections = parse_file(content, path, repo_id)
                 if sections:
                     all_sections.extend(sections)
                     doc_types[ext.lower()] = doc_types.get(ext.lower(), 0) + 1
-                    raw_files[path] = parsed_content
+                    raw_files[path] = content
                     parsed_files.append(path)
             except Exception:
                 warnings.append(f"Failed to parse {path}")
-                continue
 
         if not all_sections:
             return {"success": False, "error": "No sections extracted"}
 
         all_sections = summarize_sections(all_sections, use_ai=use_ai_summaries)
 
-        store = DocStore(base_path=storage_path)
         saved = store.save_index(
             owner=owner,
             name=repo,
@@ -220,7 +285,7 @@ async def index_repo(
             doc_types=doc_types,
         )
 
-        latency_ms = int((time.time() - t0) * 1000)
+        latency_ms = int((time.perf_counter() - t0) * 1000)
         result = {
             "success": True,
             "repo": f"{owner}/{repo}",
